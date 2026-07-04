@@ -88,35 +88,51 @@ export const supabaseService = {
   async insertTransaction(transaction, items) {
     if (!isSupabaseConfigured()) return null;
 
-    // Use maybeSingle() instead of single() to avoid throwing PGRST116 when receipt does not exist
-    const { data: existingTx } = await supabase
+    // Check if receipt already exists using standard array select (HTTP 200, no 406 error)
+    const { data: existingList } = await supabase
       .from('transactions')
       .select('id')
-      .eq('receipt_no', transaction.receiptNo)
-      .maybeSingle();
+      .eq('receipt_no', transaction.receiptNo);
 
-    if (existingTx) {
+    if (existingList && existingList.length > 0) {
       console.log(`[Supabase] Transaction ${transaction.receiptNo} already exists.`);
-      return existingTx;
+      return existingList[0];
     }
 
-    const { data: txData, error: txErr } = await supabase
+    const payload = {
+      receipt_no: transaction.receiptNo,
+      date: transaction.date,
+      subtotal: transaction.subtotal,
+      discount: transaction.discount || 0,
+      tax: transaction.tax || 0,
+      total: transaction.total,
+      pay_amount: transaction.payAmount,
+      change_amount: transaction.changeAmount,
+      payment_method: transaction.paymentMethod,
+      status: transaction.status || 'SELESAI',
+      sync_status: 'TERSYNC'
+    };
+
+    // Add user_id if available
+    if (transaction.userId) {
+      payload.user_id = transaction.userId;
+    }
+
+    let { data: txData, error: txErr } = await supabase
       .from('transactions')
-      .insert([{
-        receipt_no: transaction.receiptNo,
-        date: transaction.date,
-        subtotal: transaction.subtotal,
-        discount: transaction.discount || 0,
-        tax: transaction.tax || 0,
-        total: transaction.total,
-        pay_amount: transaction.payAmount,
-        change_amount: transaction.changeAmount,
-        payment_method: transaction.paymentMethod,
-        user_id: transaction.userId || null,
-        status: transaction.status || 'SELESAI',
-        sync_status: 'TERSYNC'
-      }])
+      .insert([payload])
       .select();
+
+    // Fallback: if user_id column doesn't exist in Supabase schema, retry without user_id
+    if (txErr && (txErr.message?.includes('user_id') || txErr.code === 'PGRST204')) {
+      delete payload.user_id;
+      const retryResult = await supabase
+        .from('transactions')
+        .insert([payload])
+        .select();
+      txData = retryResult.data;
+      txErr = retryResult.error;
+    }
 
     if (txErr) throw txErr;
 
