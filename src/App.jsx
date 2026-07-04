@@ -7,9 +7,11 @@ import CashierView from './components/POS/CashierView';
 import InventoryView from './components/Inventory/InventoryView';
 import TransactionsView from './components/Transactions/TransactionsView';
 import ReportsView from './components/Reports/ReportsView';
+import SettingsView from './components/Settings/SettingsView';
 import LoginView from './components/Auth/LoginView';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
-import { supabase } from './lib/supabaseClient';
+import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
+import { supabaseService } from './services/supabaseService';
 import confetti from 'canvas-confetti';
 
 export default function App() {
@@ -177,7 +179,7 @@ export default function App() {
     const txId = await db.transactions.add(newTx);
     const savedTx = { ...newTx, id: txId };
 
-    // Automatically reduce product stocks
+    // Automatically reduce product stocks in local DB
     for (const item of checkoutData.items) {
       const product = await db.products.get(item.id);
       if (product) {
@@ -192,18 +194,39 @@ export default function App() {
     return savedTx;
   };
 
-  // Product CRUD
+  // Product CRUD (local DB + Supabase sync)
   const handleAddProduct = async (productData) => {
-    await db.products.add(productData);
+    const id = await db.products.add(productData);
+    if (isOnline && isSupabaseConfigured()) {
+      try {
+        await supabaseService.insertProduct({ ...productData, id });
+      } catch (err) {
+        console.warn('Syncing new product to Supabase failed:', err.message);
+      }
+    }
   };
 
   const handleUpdateProduct = async (id, productData) => {
     await db.products.update(id, productData);
+    if (isOnline && isSupabaseConfigured()) {
+      try {
+        await supabaseService.updateProduct(id, productData);
+      } catch (err) {
+        console.warn('Syncing product update to Supabase failed:', err.message);
+      }
+    }
   };
 
   const handleDeleteProduct = async (id) => {
     if (confirm('Yakin ingin menghapus produk ini dari daftar stok?')) {
       await db.products.delete(id);
+      if (isOnline && isSupabaseConfigured()) {
+        try {
+          await supabaseService.deleteProduct(id);
+        } catch (err) {
+          console.warn('Syncing product deletion from Supabase failed:', err.message);
+        }
+      }
     }
   };
 
