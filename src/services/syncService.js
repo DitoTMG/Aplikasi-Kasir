@@ -38,6 +38,50 @@ export const syncService = {
     }
   },
 
+  // Sync transactions from Supabase Cloud to local Dexie DB
+  async syncTransactionsFromCloud() {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const cloudTxs = await supabaseService.fetchTransactions();
+      if (!cloudTxs) return;
+
+      for (const ctx of cloudTxs) {
+        const formattedTx = {
+          receiptNo: ctx.receipt_no,
+          date: ctx.date || ctx.created_at,
+          subtotal: Number(ctx.subtotal) || 0,
+          discount: Number(ctx.discount) || 0,
+          tax: Number(ctx.tax) || 0,
+          total: Number(ctx.total) || 0,
+          payAmount: Number(ctx.pay_amount) || 0,
+          changeAmount: Number(ctx.change_amount) || 0,
+          paymentMethod: ctx.payment_method || 'Tunai',
+          status: ctx.status || 'SELESAI',
+          syncStatus: 'TERSYNC',
+          createdAt: ctx.created_at,
+          items: (ctx.transaction_items || []).map(item => ({
+            id: item.product_id,
+            sku: item.sku,
+            name: item.name,
+            buyPrice: Number(item.buy_price) || 0,
+            price: Number(item.sell_price) || 0,
+            qty: item.qty,
+            subtotal: Number(item.subtotal) || 0
+          }))
+        };
+
+        const existing = await db.transactions.where('receiptNo').equals(ctx.receipt_no).first();
+        if (existing) {
+          await db.transactions.put({ ...formattedTx, id: existing.id });
+        } else {
+          await db.transactions.add(formattedTx);
+        }
+      }
+    } catch (err) {
+      console.warn('[Sync] Could not sync transactions from cloud:', err.message);
+    }
+  },
+
   // Subscribe to Supabase Realtime changes across devices
   subscribeRealtime() {
     if (!isSupabaseConfigured()) return null;
@@ -115,6 +159,15 @@ export const syncService = {
             if (payload.old.id) {
               await db.transactions.delete(payload.old.id);
             }
+            if (payload.old.receipt_no) {
+              const match = await db.transactions.where('receiptNo').equals(payload.old.receipt_no).first();
+              if (match) {
+                await db.transactions.delete(match.id);
+              }
+            }
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            // Instantly pull & sync the transaction into Dexie DB
+            await syncService.syncTransactionsFromCloud();
           }
         }
       )
@@ -143,8 +196,9 @@ export const syncService = {
         };
       }
 
-      // First sync products from cloud
+      // Sync products and transactions from cloud
       await this.syncProductsFromCloud();
+      await this.syncTransactionsFromCloud();
 
       const pendingTx = await db.transactions
         .where('syncStatus')

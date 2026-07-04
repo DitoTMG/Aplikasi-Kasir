@@ -87,6 +87,19 @@ export const supabaseService = {
   // Transactions
   async insertTransaction(transaction, items) {
     if (!isSupabaseConfigured()) return null;
+
+    // Check if receipt already exists in Supabase
+    const { data: existingTx } = await supabase
+      .from('transactions')
+      .select('id')
+      .eq('receipt_no', transaction.receiptNo)
+      .single();
+
+    if (existingTx) {
+      console.log(`[Supabase] Transaction ${transaction.receiptNo} already exists.`);
+      return existingTx;
+    }
+
     const { data: txData, error: txErr } = await supabase
       .from('transactions')
       .insert([{

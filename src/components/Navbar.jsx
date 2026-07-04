@@ -7,15 +7,11 @@ import {
   Settings, 
   Wifi, 
   WifiOff, 
-  RefreshCw, 
   Tablet, 
   Smartphone,
   Store,
   Sun,
-  Moon,
-  LogOut,
-  User,
-  Shield
+  Moon
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -25,16 +21,11 @@ export default function Navbar({
   setActiveTab, 
   isOnline, 
   setIsOnline, 
-  pendingSyncCount, 
-  onSyncNow,
-  isSyncing,
   deviceMode,
   setDeviceMode,
   storeName,
   theme,
   setTheme,
-  currentUser,
-  onLogout,
   userRole
 }) {
   const allNavItems = [
@@ -42,16 +33,11 @@ export default function Navbar({
     { id: 'inventory', label: 'Stok Produk', icon: Package, roles: ['owner'] },
     { id: 'transactions', label: 'Riwayat Struk', icon: FileText, roles: ['owner', 'kasir'] },
     { id: 'reports', label: 'Laporan', icon: BarChart3, roles: ['owner'] },
-    { id: 'settings', label: 'Pengaturan', icon: Settings, roles: ['owner'] },
+    { id: 'settings', label: 'Pengaturan', icon: Settings, roles: ['owner', 'kasir'] },
   ];
 
   // Filter nav items based on user role
   const navItems = allNavItems.filter(item => item.roles.includes(userRole || 'kasir'));
-
-  // Role badge color
-  const roleBadgeClass = userRole === 'owner'
-    ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30'
-    : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30';
 
   return (
     <header className={`sticky top-0 z-40 backdrop-blur-md border-b transition-colors ${
@@ -112,7 +98,7 @@ export default function Navbar({
             })}
           </nav>
 
-          {/* Right Action Tools: Connection Status, Device Mode, Theme Toggle */}
+          {/* Right Action Tools: Theme Toggle, Device Mode, Online Status */}
           <div className="flex items-center space-x-2">
             
             {/* Theme Toggle Button */}
@@ -175,54 +161,6 @@ export default function Navbar({
                 </>
               )}
             </button>
-
-            {/* Manual Sync Button with Badge */}
-            <Button
-              variant={pendingSyncCount > 0 ? 'default' : 'outline'}
-              size="sm"
-              onClick={onSyncNow}
-              disabled={isSyncing || !isOnline}
-              className="relative h-9 px-3 text-xs rounded-lg"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''} sm:mr-1.5`} />
-              <span className="hidden sm:inline">Sync</span>
-              {pendingSyncCount > 0 && (
-                <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-bold">
-                  {pendingSyncCount}
-                </span>
-              )}
-            </Button>
-
-            {/* Active User Badge & Logout Button */}
-            {currentUser && (
-              <div className="flex items-center space-x-1 pl-1 border-l border-slate-200 dark:border-slate-800">
-                <div className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                    userRole === 'owner' ? 'bg-amber-500 text-white' : 'bg-indigo-600 text-white'
-                  }`}>
-                    {currentUser.name?.[0]?.toUpperCase() || 'K'}
-                  </div>
-                  <div className="leading-tight">
-                    <div className="font-bold text-slate-900 dark:text-white max-w-[100px] truncate">{currentUser.name}</div>
-                    <div className={`text-[9px] font-bold uppercase tracking-wider ${
-                      userRole === 'owner' ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
-                    }`}>
-                      {userRole === 'owner' ? '👑 Owner' : '🏷️ Kasir'}
-                    </div>
-                  </div>
-                </div>
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onLogout}
-                  title="Keluar / Logout Akun"
-                  className="h-9 w-9 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
 
           </div>
 

@@ -101,10 +101,11 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Subscribe to Realtime multi-device sync when user is logged in & online
+  // Subscribe to Realtime multi-device sync & pull cloud data when logged in & online
   useEffect(() => {
     if (currentUser && isOnline) {
       syncService.syncProductsFromCloud();
+      syncService.syncTransactionsFromCloud();
       syncService.subscribeRealtime();
     } else {
       syncService.unsubscribeRealtime();
@@ -190,7 +191,7 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
 
-    // Add to DB
+    // Add to local DB
     const txId = await db.transactions.add(newTx);
     const savedTx = { ...newTx, id: txId };
 
@@ -207,6 +208,16 @@ export default function App() {
             console.warn('Syncing stock reduction to Supabase failed:', err.message);
           }
         }
+      }
+    }
+
+    // Immediately push transaction to Supabase if online
+    if (isOnline && isSupabaseConfigured()) {
+      try {
+        await supabaseService.insertTransaction(savedTx, checkoutData.items);
+      } catch (err) {
+        console.warn('Syncing transaction to Supabase failed:', err.message);
+        await db.transactions.update(txId, { syncStatus: 'MENUNGGU_SYNC' });
       }
     }
 
@@ -241,14 +252,12 @@ export default function App() {
 
   const handleDeleteProduct = async (id) => {
     if (confirm('Yakin ingin menghapus produk ini dari daftar stok?')) {
-      // Find item in local DB before deleting so we have sku/id
       const itemToDelete = await db.products.get(id);
       await db.products.delete(id);
 
       if (isOnline && isSupabaseConfigured()) {
         try {
           await supabaseService.deleteProduct(id);
-          // Also try deleting by SKU if id differs
           if (itemToDelete?.sku) {
             const { error } = await supabase.from('products').delete().eq('sku', itemToDelete.sku);
             if (error) console.warn('Delete by SKU fallback:', error.message);
@@ -287,8 +296,8 @@ export default function App() {
   const userRole = currentUser?.role || 'kasir';
   const canAccessTab = (tabId) => {
     if (userRole === 'owner') return true;
-    // Kasir can only access POS and Transactions
-    return ['pos', 'transactions'].includes(tabId);
+    // Kasir can access POS, Transactions, and Settings (for account & sync)
+    return ['pos', 'transactions', 'settings'].includes(tabId);
   };
 
   // Redirect kasir to allowed tab if they're on a restricted one
@@ -328,16 +337,11 @@ export default function App() {
         setActiveTab={setActiveTab}
         isOnline={isOnline}
         setIsOnline={setIsOnline}
-        pendingSyncCount={pendingSyncCount}
-        onSyncNow={handleSyncNow}
-        isSyncing={isSyncing}
         deviceMode={deviceMode}
         setDeviceMode={setDeviceMode}
         storeName={storeSettings.storeName}
         theme={theme}
         setTheme={setTheme}
-        currentUser={currentUser}
-        onLogout={handleLogout}
         userRole={userRole}
       />
 
@@ -386,6 +390,13 @@ export default function App() {
             onSaveSettings={handleSaveSettings}
             theme={theme}
             setTheme={setTheme}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            userRole={userRole}
+            pendingSyncCount={pendingSyncCount}
+            onSyncNow={handleSyncNow}
+            isSyncing={isSyncing}
+            isOnline={isOnline}
           />
         )}
       </main>

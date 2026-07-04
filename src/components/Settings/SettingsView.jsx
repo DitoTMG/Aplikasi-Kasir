@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, 
   Store, 
@@ -10,12 +10,32 @@ import {
   HelpCircle,
   Sun,
   Moon,
-  Palette
+  User,
+  LogOut,
+  RefreshCw,
+  Smartphone,
+  ShieldCheck,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import LocalNetworkGuideModal from './LocalNetworkGuideModal';
+import AndroidDownloadModal from './AndroidDownloadModal';
 import { db } from '../../db/dexieDb';
+import { Button } from '../ui/button';
 
-export default function SettingsView({ storeSettings, onSaveSettings, theme, setTheme }) {
+export default function SettingsView({ 
+  storeSettings, 
+  onSaveSettings, 
+  theme, 
+  setTheme,
+  currentUser,
+  onLogout,
+  userRole,
+  pendingSyncCount = 0,
+  onSyncNow,
+  isSyncing = false,
+  isOnline = true
+}) {
   const [formData, setFormData] = useState({
     storeName: storeSettings?.storeName || 'Toko Berkah Utama',
     storeAddress: storeSettings?.storeAddress || 'Jl. Raya Merdeka No. 88, Jakarta',
@@ -25,7 +45,32 @@ export default function SettingsView({ storeSettings, onSaveSettings, theme, set
   });
 
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isAndroidModalOpen, setIsAndroidModalOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallPwa = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -93,102 +138,230 @@ export default function SettingsView({ storeSettings, onSaveSettings, theme, set
           <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-200 dark:border-indigo-500/30">
             <Settings className="w-4 h-4" />
           </div>
-          <span>Pengaturan Toko & Koneksi Sync</span>
+          <span>Pengaturan System & Akun Pengguna</span>
         </h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Atur profil toko pada struk, IP Wi-Fi lokal, dan cadangan data</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Kelola profil akun, sinkronisasi cloud, download app Android, dan cadangan data</p>
       </div>
 
       <div className="max-w-4xl space-y-6">
 
+        {/* SECTION 1: USER ACCOUNT & LOGOUT (PERMINTAAN 3) */}
+        {currentUser && (
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 text-slate-900 dark:text-white space-y-4 shadow-xs transition-colors">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-200 dark:border-indigo-500/30">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base">Informasi Akun Pengguna</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Status login & hak akses peran dalam sistem</p>
+                </div>
+              </div>
 
-        {/* Supabase Cloud & MCP Connection Section */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 text-slate-900 dark:text-white space-y-4 shadow-xs transition-colors">
-          <div className="flex items-center space-x-2.5 border-b border-slate-100 dark:border-slate-800 pb-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-500/30">
-              <Database className="w-4 h-4" />
+              {/* Role Tag */}
+              <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                userRole === 'owner'
+                  ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30'
+              }`}>
+                {userRole === 'owner' ? '👑 Pemilik Toko (Owner)' : '🏷️ Kasir Utama'}
+              </span>
             </div>
-            <div>
-              <h3 className="font-extrabold text-base">Koneksi Supabase Cloud & MCP Database</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Pengaturan URL & API Key untuk sinkronisasi database cloud dan MCP Server</p>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className="flex items-center space-x-3">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white font-extrabold text-lg shadow-md ${
+                  userRole === 'owner' ? 'bg-amber-500 shadow-amber-500/20' : 'bg-indigo-600 shadow-indigo-600/20'
+                }`}>
+                  {currentUser.name?.[0]?.toUpperCase() || 'U'}
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">{currentUser.name}</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{currentUser.email}</p>
+                </div>
+              </div>
+
+              {/* Logout Button */}
+              <button
+                type="button"
+                onClick={onLogout}
+                className="bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition cursor-pointer shrink-0"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Keluar / Logout Akun</span>
+              </button>
             </div>
           </div>
+        )}
 
-          <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 text-xs space-y-2">
-            <p className="font-bold text-slate-700 dark:text-slate-300">📌 Di mana menemukan URL & Key di Supabase Dashboard?</p>
-            <ol className="list-decimal list-inside text-slate-600 dark:text-slate-400 space-y-1">
-              <li>Buka <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 font-bold underline">Supabase Dashboard</a></li>
-              <li>Klik ikon roda gigi ⚙️ <b>Project Settings</b> di bilah navigasi kiri bawah.</li>
-              <li>Pilih menu <b>API Settings</b>.</li>
-              <li>Salin <b>Project URL</b> dan <b>service_role secret key</b>.</li>
-            </ol>
+
+        {/* SECTION 2: SINKRONISASI DATA CLOUD (PERMINTAAN 5 - MOVED FROM TOP BAR) */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 text-slate-900 dark:text-white space-y-4 shadow-xs transition-colors">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-500/30">
+                <RefreshCw className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base">Sinkronisasi Data Multi-Device</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Status koneksi Supabase Cloud Realtime & sinkronisasi manual</p>
+              </div>
+            </div>
+
+            <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+              isOnline 
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30'
+                : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30'
+            }`}>
+              {isOnline ? '🟢 Online (Terhubung)' : '🟡 Offline (Lokal Only)'}
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Transaksi Menunggu Sync:</span>
+                {pendingSyncCount > 0 ? (
+                  <span className="bg-rose-500 text-white text-xs font-extrabold px-2 py-0.5 rounded-full animate-bounce">
+                    {pendingSyncCount} Transaksi
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Semua Data Tersinkronisasi</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Perubahan produk, transaksi, dan stok disinkronkan secara otomatis antar-device secara real-time.
+              </p>
+            </div>
+
+            <Button
+              variant={pendingSyncCount > 0 ? 'default' : 'outline'}
+              onClick={onSyncNow}
+              disabled={isSyncing || !isOnline}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5 py-2.5 text-xs rounded-xl flex items-center space-x-2 shadow-md cursor-pointer shrink-0"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}</span>
+            </Button>
           </div>
         </div>
 
-        {/* Main Settings Form */}
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 text-slate-900 dark:text-white space-y-5 shadow-xs transition-colors">
-          
-          <div className="flex items-center space-x-2.5 border-b border-slate-100 dark:border-slate-800 pb-3">
-            <Store className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h3 className="font-extrabold text-base">Profil Toko Pada Struk Thermal</h3>
+
+        {/* SECTION 3: DOWNLOAD KE ANDROID (PERMINTAAN 4) */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 text-slate-900 dark:text-white space-y-4 shadow-xs transition-colors">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-200 dark:border-indigo-500/30">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base">Aplikasi Kasir Android (PWA)</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Pasang aplikasi di HP Android tanpa melalui Google Play Store</p>
+              </div>
+            </div>
+
+            <span className="bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-500/30">
+              Android Ready
+            </span>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Nama Toko</label>
-            <input
-              type="text"
-              value={formData.storeName}
-              onChange={(e) => setFormData({ ...formData, storeName: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            />
-          </div>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="space-y-1">
+              <h4 className="font-bold text-xs text-slate-900 dark:text-white">Install Langsung ke HP Android Anda</h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Gunakan aplikasi ini dalam bentuk aplikasi mandiri di HP / Tablet Android dengan akses offline & performa cepat.
+              </p>
+            </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Alamat Lengkap Toko</label>
-            <input
-              type="text"
-              value={formData.storeAddress}
-              onChange={(e) => setFormData({ ...formData, storeAddress: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Nomor Telepon Toko / WhatsApp</label>
-            <input
-              type="text"
-              value={formData.storePhone}
-              onChange={(e) => setFormData({ ...formData, storePhone: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Pesan Catatan Kaki Struk (Footer)</label>
-            <textarea
-              rows="3"
-              value={formData.receiptFooter}
-              onChange={(e) => setFormData({ ...formData, receiptFooter: e.target.value })}
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            {saveStatus && (
-              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{saveStatus}</span>
-            )}
             <button
-              type="submit"
-              className="ml-auto bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition shadow-xs cursor-pointer"
+              onClick={() => {
+                if (deferredPrompt) {
+                  handleInstallPwa();
+                } else {
+                  setIsAndroidModalOpen(true);
+                }
+              }}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition shadow-md cursor-pointer shrink-0"
             >
-              <Save className="w-4 h-4" />
-              <span>Simpan Perubahan</span>
+              <Download className="w-4 h-4" />
+              <span>Download / Install Android</span>
             </button>
           </div>
+        </div>
 
-        </form>
 
-        {/* Wi-Fi Local Server Guide Section */}
+        {/* SECTION 4: STORE PROFILE (RECEIPTS) */}
+        {userRole === 'owner' && (
+          <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 text-slate-900 dark:text-white space-y-5 shadow-xs transition-colors">
+            
+            <div className="flex items-center space-x-2.5 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <Store className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="font-extrabold text-base">Profil Toko Pada Struk Thermal</h3>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Nama Toko</label>
+              <input
+                type="text"
+                value={formData.storeName}
+                onChange={(e) => setFormData({ ...formData, storeName: e.target.value })}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Alamat Lengkap Toko</label>
+              <input
+                type="text"
+                value={formData.storeAddress}
+                onChange={(e) => setFormData({ ...formData, storeAddress: e.target.value })}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Nomor Telepon Toko / WhatsApp</label>
+              <input
+                type="text"
+                value={formData.storePhone}
+                onChange={(e) => setFormData({ ...formData, storePhone: e.target.value })}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Pesan Catatan Kaki Struk (Footer)</label>
+              <textarea
+                rows="3"
+                value={formData.receiptFooter}
+                onChange={(e) => setFormData({ ...formData, receiptFooter: e.target.value })}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              {saveStatus && (
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{saveStatus}</span>
+              )}
+              <button
+                type="submit"
+                className="ml-auto bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition shadow-xs cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>Simpan Perubahan</span>
+              </button>
+            </div>
+
+          </form>
+        )}
+
+
+        {/* SECTION 5: Wi-Fi Local Server Guide */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 text-slate-900 dark:text-white space-y-4 shadow-xs transition-colors">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center space-x-2.5">
@@ -226,7 +399,8 @@ export default function SettingsView({ storeSettings, onSaveSettings, theme, set
           </div>
         </div>
 
-        {/* Backup & Restore Data Section */}
+
+        {/* SECTION 6: Backup & Restore Data */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 text-slate-900 dark:text-white space-y-4 shadow-xs transition-colors">
           <div className="flex items-center space-x-2.5 border-b border-slate-100 dark:border-slate-800 pb-3">
             <Database className="w-5 h-5 text-amber-500" />
@@ -260,16 +434,23 @@ export default function SettingsView({ storeSettings, onSaveSettings, theme, set
 
           </div>
         </div>
+
       </div>
 
-      {/* Guide Modal */}
+      {/* Guide Modals */}
       <LocalNetworkGuideModal
         isOpen={isGuideOpen}
         onClose={() => setIsGuideOpen(false)}
         localIp={formData.localServerIp}
       />
 
+      <AndroidDownloadModal
+        isOpen={isAndroidModalOpen}
+        onClose={() => setIsAndroidModalOpen(false)}
+        onInstallPwa={handleInstallPwa}
+        canInstallPwa={Boolean(deferredPrompt)}
+      />
+
     </div>
   );
 }
-
