@@ -47,7 +47,7 @@ export default function App() {
         .from('profiles')
         .select('role, full_name')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
       
       if (error) {
         console.warn('Could not fetch profile:', error.message);
@@ -107,6 +107,9 @@ export default function App() {
       syncService.syncProductsFromCloud();
       syncService.syncTransactionsFromCloud();
       syncService.subscribeRealtime();
+
+      // Trigger sync for any pending transactions saved while offline/error
+      syncService.syncPendingData();
     } else {
       syncService.unsubscribeRealtime();
     }
@@ -215,6 +218,7 @@ export default function App() {
     if (isOnline && isSupabaseConfigured()) {
       try {
         await supabaseService.insertTransaction(savedTx, checkoutData.items);
+        await db.transactions.update(txId, { syncStatus: 'TERSYNC' });
       } catch (err) {
         console.warn('Syncing transaction to Supabase failed:', err.message);
         await db.transactions.update(txId, { syncStatus: 'MENUNGGU_SYNC' });

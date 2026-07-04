@@ -88,12 +88,12 @@ export const supabaseService = {
   async insertTransaction(transaction, items) {
     if (!isSupabaseConfigured()) return null;
 
-    // Check if receipt already exists in Supabase
+    // Use maybeSingle() instead of single() to avoid throwing PGRST116 when receipt does not exist
     const { data: existingTx } = await supabase
       .from('transactions')
       .select('id')
       .eq('receipt_no', transaction.receiptNo)
-      .single();
+      .maybeSingle();
 
     if (existingTx) {
       console.log(`[Supabase] Transaction ${transaction.receiptNo} already exists.`);
