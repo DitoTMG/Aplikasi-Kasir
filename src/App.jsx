@@ -101,11 +101,26 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Subscribe to Realtime multi-device sync when user is logged in & online
+  useEffect(() => {
+    if (currentUser && isOnline) {
+      syncService.syncProductsFromCloud();
+      syncService.subscribeRealtime();
+    } else {
+      syncService.unsubscribeRealtime();
+    }
+
+    return () => {
+      syncService.unsubscribeRealtime();
+    };
+  }, [currentUser, isOnline]);
+
   const handleLoginSuccess = (userData) => {
     setCurrentUser(userData);
   };
 
   const handleLogout = async () => {
+    syncService.unsubscribeRealtime();
     await supabase.auth.signOut();
     setCurrentUser(null);
   };
@@ -185,6 +200,13 @@ export default function App() {
       if (product) {
         const newStock = Math.max(0, product.stock - item.qty);
         await db.products.update(item.id, { stock: newStock });
+        if (isOnline && isSupabaseConfigured()) {
+          try {
+            await supabaseService.updateProduct(item.id, { ...product, stock: newStock });
+          } catch (err) {
+            console.warn('Syncing stock reduction to Supabase failed:', err.message);
+          }
+        }
       }
     }
 
@@ -219,10 +241,18 @@ export default function App() {
 
   const handleDeleteProduct = async (id) => {
     if (confirm('Yakin ingin menghapus produk ini dari daftar stok?')) {
+      // Find item in local DB before deleting so we have sku/id
+      const itemToDelete = await db.products.get(id);
       await db.products.delete(id);
+
       if (isOnline && isSupabaseConfigured()) {
         try {
           await supabaseService.deleteProduct(id);
+          // Also try deleting by SKU if id differs
+          if (itemToDelete?.sku) {
+            const { error } = await supabase.from('products').delete().eq('sku', itemToDelete.sku);
+            if (error) console.warn('Delete by SKU fallback:', error.message);
+          }
         } catch (err) {
           console.warn('Syncing product deletion from Supabase failed:', err.message);
         }
@@ -233,7 +263,16 @@ export default function App() {
   // Delete Transaction
   const handleDeleteTransaction = async (id) => {
     if (confirm('Yakin ingin menghapus riwayat transaksi ini?')) {
+      const txToDelete = await db.transactions.get(id);
       await db.transactions.delete(id);
+
+      if (isOnline && isSupabaseConfigured() && txToDelete?.receiptNo) {
+        try {
+          await supabase.from('transactions').delete().eq('receipt_no', txToDelete.receiptNo);
+        } catch (err) {
+          console.warn('Syncing transaction deletion failed:', err.message);
+        }
+      }
     }
   };
 

@@ -1,6 +1,6 @@
 -- ==========================================
 -- APLIKASI QASIR - SUPABASE DATABASE SCHEMA
--- PRODUCTION READY - SECURE RLS
+-- PRODUCTION READY - SECURE RLS & REALTIME SYNC
 -- ==========================================
 
 -- Enable UUID extension if needed
@@ -78,6 +78,11 @@ CREATE TABLE IF NOT EXISTS public.products (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Set REPLICA IDENTITY FULL so DELETE events include old record fields
+ALTER TABLE public.products REPLICA IDENTITY FULL;
+ALTER TABLE public.categories REPLICA IDENTITY FULL;
+ALTER TABLE public.transactions REPLICA IDENTITY FULL;
 
 -- ==========================================
 -- 3. TRANSACTIONS TABLE (with user_id audit)
@@ -177,24 +182,21 @@ ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 -- ==========================================
 -- RLS POLICIES — PROFILES
 -- ==========================================
--- All authenticated users can read profiles
 CREATE POLICY "Authenticated users can view profiles"
     ON public.profiles FOR SELECT
     USING (auth.uid() IS NOT NULL);
 
--- Users can update their own profile (name only, not role)
 CREATE POLICY "Users can update own profile"
     ON public.profiles FOR UPDATE
     USING (auth.uid() = id)
     WITH CHECK (auth.uid() = id);
 
--- Only owner can update any profile (for role changes)
 CREATE POLICY "Owner can manage all profiles"
     ON public.profiles FOR ALL
     USING (public.is_owner());
 
 -- ==========================================
--- RLS POLICIES — CATEGORIES (Authenticated CRUD)
+-- RLS POLICIES — CATEGORIES
 -- ==========================================
 CREATE POLICY "Authenticated select categories"
     ON public.categories FOR SELECT
@@ -213,7 +215,7 @@ CREATE POLICY "Owner delete categories"
     USING (public.is_owner());
 
 -- ==========================================
--- RLS POLICIES — PRODUCTS (Authenticated CRUD)
+-- RLS POLICIES — PRODUCTS
 -- ==========================================
 CREATE POLICY "Authenticated select products"
     ON public.products FOR SELECT
@@ -232,7 +234,7 @@ CREATE POLICY "Owner delete products"
     USING (public.is_owner());
 
 -- ==========================================
--- RLS POLICIES — TRANSACTIONS (Authenticated CRUD)
+-- RLS POLICIES — TRANSACTIONS
 -- ==========================================
 CREATE POLICY "Authenticated select transactions"
     ON public.transactions FOR SELECT
@@ -270,7 +272,7 @@ CREATE POLICY "Owner delete transaction_items"
     USING (public.is_owner());
 
 -- ==========================================
--- RLS POLICIES — SETTINGS (Owner-managed)
+-- RLS POLICIES — SETTINGS
 -- ==========================================
 CREATE POLICY "Authenticated select settings"
     ON public.settings FOR SELECT
@@ -283,6 +285,31 @@ CREATE POLICY "Owner insert settings"
 CREATE POLICY "Owner update settings"
     ON public.settings FOR UPDATE
     USING (public.is_owner());
+
+-- ==========================================
+-- ENABLE REALTIME ON TABLES
+-- ==========================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'products'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.products;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'categories'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.categories;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'transactions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.transactions;
+  END IF;
+END $$;
 
 -- ==========================================
 -- SEED INITIAL DATA
