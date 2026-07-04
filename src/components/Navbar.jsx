@@ -14,7 +14,8 @@ import {
   Sun,
   Moon,
   LogOut,
-  User
+  User,
+  Shield
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -33,15 +34,24 @@ export default function Navbar({
   theme,
   setTheme,
   currentUser,
-  onLogout
+  onLogout,
+  userRole
 }) {
-  const navItems = [
-    { id: 'pos', label: 'Kasir (POS)', icon: ShoppingCart },
-    { id: 'inventory', label: 'Stok Produk', icon: Package },
-    { id: 'transactions', label: 'Riwayat Struk', icon: FileText },
-    { id: 'reports', label: 'Laporan', icon: BarChart3 },
-    { id: 'settings', label: 'Pengaturan', icon: Settings },
+  const allNavItems = [
+    { id: 'pos', label: 'Kasir (POS)', icon: ShoppingCart, roles: ['owner', 'kasir'] },
+    { id: 'inventory', label: 'Stok Produk', icon: Package, roles: ['owner'] },
+    { id: 'transactions', label: 'Riwayat Struk', icon: FileText, roles: ['owner', 'kasir'] },
+    { id: 'reports', label: 'Laporan', icon: BarChart3, roles: ['owner'] },
+    { id: 'settings', label: 'Pengaturan', icon: Settings, roles: ['owner'] },
   ];
+
+  // Filter nav items based on user role
+  const navItems = allNavItems.filter(item => item.roles.includes(userRole || 'kasir'));
+
+  // Role badge color
+  const roleBadgeClass = userRole === 'owner'
+    ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30'
+    : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30';
 
   return (
     <header className={`sticky top-0 z-40 backdrop-blur-md border-b transition-colors ${
@@ -187,12 +197,18 @@ export default function Navbar({
             {currentUser && (
               <div className="flex items-center space-x-1 pl-1 border-l border-slate-200 dark:border-slate-800">
                 <div className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
-                  <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    userRole === 'owner' ? 'bg-amber-500 text-white' : 'bg-indigo-600 text-white'
+                  }`}>
                     {currentUser.name?.[0]?.toUpperCase() || 'K'}
                   </div>
                   <div className="leading-tight">
                     <div className="font-bold text-slate-900 dark:text-white max-w-[100px] truncate">{currentUser.name}</div>
-                    <div className="text-[9px] text-slate-500 dark:text-slate-400">{currentUser.role}</div>
+                    <div className={`text-[9px] font-bold uppercase tracking-wider ${
+                      userRole === 'owner' ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
+                    }`}>
+                      {userRole === 'owner' ? '👑 Owner' : '🏷️ Kasir'}
+                    </div>
                   </div>
                 </div>
 
@@ -251,5 +267,3 @@ export default function Navbar({
     </header>
   );
 }
-
-

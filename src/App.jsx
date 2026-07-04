@@ -19,11 +19,9 @@ export default function App() {
   const [deviceMode, setDeviceMode] = useState('tablet'); // 'tablet' | 'smartphone'
   const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
 
-  // User Auth State
-  const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('qasir_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  // Auth State — NO localStorage, always from Supabase session
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Dexie Live Queries
   const products = useLiveQuery(() => db.products.toArray(), []) || [];
@@ -40,34 +38,62 @@ export default function App() {
   // Pending sync items count
   const pendingSyncCount = transactions.filter(t => t.syncStatus === 'MENUNGGU_SYNC').length;
 
-  // Check Supabase Auth Session
+  // Fetch user profile (role) from Supabase
+  const fetchUserProfile = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role, full_name')
+        .eq('id', userId)
+        .single();
+      
+      if (error) {
+        console.warn('Could not fetch profile:', error.message);
+        return null;
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
+  // Build user object from Supabase session + profile
+  const buildUserFromSession = async (session) => {
+    if (!session?.user) return null;
+
+    const user = session.user;
+    const profile = await fetchUserProfile(user.id);
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0],
+      role: profile?.role || 'kasir'
+    };
+  };
+
+  // Check Supabase Auth Session on mount
   useEffect(() => {
     seedInitialData();
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const u = {
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
-          role: 'Kasir Supabase'
-        };
-        setCurrentUser(u);
-        localStorage.setItem('qasir_user', JSON.stringify(u));
+    // Get initial session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        const userData = await buildUserFromSession(session);
+        setCurrentUser(userData);
       }
+      setAuthLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        const u = {
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
-          role: 'Kasir Supabase'
-        };
-        setCurrentUser(u);
-        localStorage.setItem('qasir_user', JSON.stringify(u));
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        const userData = await buildUserFromSession(session);
+        setCurrentUser(userData);
+      } else {
+        setCurrentUser(null);
       }
+      setAuthLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -75,13 +101,11 @@ export default function App() {
 
   const handleLoginSuccess = (userData) => {
     setCurrentUser(userData);
-    localStorage.setItem('qasir_user', JSON.stringify(userData));
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setCurrentUser(null);
-    localStorage.removeItem('qasir_user');
   };
 
 
@@ -143,6 +167,7 @@ export default function App() {
       payAmount: checkoutData.payAmount,
       changeAmount: checkoutData.changeAmount,
       paymentMethod: checkoutData.paymentMethod,
+      userId: currentUser?.id || null,
       status: 'SELESAI',
       syncStatus: isOnline ? 'TERSYNC' : 'MENUNGGU_SYNC',
       createdAt: new Date().toISOString()
@@ -196,6 +221,37 @@ export default function App() {
     }
   };
 
+  // Role-based tab access
+  const userRole = currentUser?.role || 'kasir';
+  const canAccessTab = (tabId) => {
+    if (userRole === 'owner') return true;
+    // Kasir can only access POS and Transactions
+    return ['pos', 'transactions'].includes(tabId);
+  };
+
+  // Redirect kasir to allowed tab if they're on a restricted one
+  useEffect(() => {
+    if (currentUser && !canAccessTab(activeTab)) {
+      setActiveTab('pos');
+    }
+  }, [currentUser, activeTab]);
+
+  // Auth Loading State
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center mx-auto shadow-lg shadow-indigo-600/30 animate-pulse">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <p className="text-sm text-slate-400 font-semibold">Memeriksa sesi login...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     return <LoginView onLoginSuccess={handleLoginSuccess} theme={theme} />;
   }
@@ -220,6 +276,7 @@ export default function App() {
         setTheme={setTheme}
         currentUser={currentUser}
         onLogout={handleLogout}
+        userRole={userRole}
       />
 
 
@@ -235,7 +292,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'inventory' && (
+        {activeTab === 'inventory' && canAccessTab('inventory') && (
           <InventoryView
             products={products}
             categories={categories}
@@ -253,7 +310,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'reports' && (
+        {activeTab === 'reports' && canAccessTab('reports') && (
           <ReportsView
             transactions={transactions}
             products={products}
@@ -261,7 +318,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'settings' && (
+        {activeTab === 'settings' && canAccessTab('settings') && (
           <SettingsView
             storeSettings={storeSettings}
             onSaveSettings={handleSaveSettings}
